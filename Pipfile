@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+xmltodict = "*"
+olefile = "*"
+"pdfminer.six" = "*"
+python-magic = "*"
+terminal-utils = {file = "https://github.com/vphpersson/terminal_utils/tarball/master"}
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
