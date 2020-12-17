@@ -4,13 +4,11 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-xmltodict = "*"
-olefile = "*"
-"pdfminer.six" = "*"
 python-magic = "*"
-terminal-utils = {file = "https://github.com/vphpersson/terminal_utils/tarball/master"}
+metadata-extractor = {editable = true, git = "ssh://git@github.com/vphpersson/metadata_extractor.git"}
+terminal-utils = {editable = true, git = "ssh://git@github.com/vphpersson/terminal_utils.git"}
 
 [dev-packages]
 
 [requires]
-python_version = "3.8"
+python_version = "3.9"
