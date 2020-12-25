@@ -19,12 +19,20 @@ from metadata_extractor.extractors import MetadataExtractor
 LOG = getLogger(__name__)
 
 
-def extract_metadata_names(sources: List[Path], recurse: bool) -> Set[str]:
+class UnsupportedMimetypeError(Exception):
+    def __init__(self, observed_mimetype: str, file_path: str):
+        super().__init__(f'Unsupported mimetype {observed_mimetype} for {file_path}')
+        self.observed_mimetype = observed_mimetype
+        self.file_path = file_path
+
+
+def extract_metadata_names(sources: List[Path], recurse: bool, exit_on_unsupported_mimetype: bool = False) -> Set[str]:
     """
     Extract names from metadata of documents.
 
     :param sources: Paths of document files or directories of document files from which to extract names.
     :param recurse: Whether to recursively find document files in directories.
+    :param exit_on_unsupported_mimetype: Exit when the mimetype of an input file is not supported.
     :return: Names extracted from metadata of document files referred to.
     """
 
@@ -33,7 +41,7 @@ def extract_metadata_names(sources: List[Path], recurse: bool) -> Set[str]:
     paths = []
     for source in sources:
         if source.is_dir():
-            paths.extend(source.glob('**/*' if recurse else '*'))
+            paths.extend(path for path in (source.glob('**/*' if recurse else '*')) if not path.is_dir())
         else:
             paths.append(source)
 
@@ -42,7 +50,19 @@ def extract_metadata_names(sources: List[Path], recurse: bool) -> Set[str]:
     for i, path in enumerate(paths, start=1):
         LOG.debug(ProgressStatus(iteration=i-1, total=len(paths), prefix='Extracting metadata... '))
 
-        metadata_extractor = MetadataExtractor.extractor_from_mime_type(mime_type=get_mimetype(str(path)))
+        mimetype = get_mimetype(str(path))
+
+        try:
+            metadata_extractor = MetadataExtractor.extractor_from_mime_type(mime_type=mimetype)
+        except KeyError:
+            error_message = f'Unsupported mimetype {mimetype} for file {path}'
+            if exit_on_unsupported_mimetype:
+                raise UnsupportedMimetypeError(observed_mimetype=mimetype, file_path=str(path))
+            else:
+                LOG.warning(error_message)
+                continue
+        except Exception as e:
+            raise e
 
         metadata = metadata_extractor.from_path(path=path)
         if not metadata:
@@ -111,15 +131,22 @@ class MetadataNamesArgumentParser(ArgumentParser):
 
         self.add_argument(
             '-w', '--ignore-warnings',
-            help='Ignore warning messages.',
+            help='Do not print warning messages.',
             dest='ignore_warnings',
             action='store_true'
         )
 
         self.add_argument(
             '-q', '--quiet',
-            help='Do not print warning messages, error messages, or the result summary.',
+            help='Do not print warning messages, error messages, or the progress bar.',
             dest='quiet',
+            action='store_true'
+        )
+
+        self.add_argument(
+            '-e', '--exit-on-unsupported-mimetype',
+            help='Exit when the mimetype of an input file is not supported',
+            dest='exit_on_unsupported_mimetype',
             action='store_true'
         )
 
@@ -137,22 +164,24 @@ class ExtractMetadataNamesProgressLogHandler(ProgressorLogHandler):
             super().emit(record=record)
             return
 
+        formatted_message: str = self.format(record=record)
+
         if record.levelno in {CRITICAL, ERROR}:
             self._progressor.print_message(
-                message=self._colored_output.make_color_output(print_color=PrintColor.RED, message=record.msg)
+                message=self._colored_output.make_color_output(print_color=PrintColor.RED, message=formatted_message)
             )
         elif record.levelno == WARNING:
             if not self.ignore_warnings:
                 self._progressor.print_message(
-                    message=self._colored_output.make_color_output(print_color=PrintColor.YELLOW, message=record.msg)
+                    message=self._colored_output.make_color_output(print_color=PrintColor.YELLOW, message=formatted_message)
                 )
         elif record.levelno == INFO:
             self._progressor.print_message(
-                message=self._colored_output.make_color_output(print_color=PrintColor.GREEN, message=record.msg)
+                message=self._colored_output.make_color_output(print_color=PrintColor.GREEN, message=formatted_message)
             )
         elif record.levelno == DEBUG:
             self._progressor.print_message(
-                message=self._colored_output.make_color_output(print_color=PrintColor.WHITE, message=record.msg)
+                message=self._colored_output.make_color_output(print_color=PrintColor.WHITE, message=formatted_message)
             )
         else:
             raise ValueError(f'Unknown log level: levelno={record.levelno}')
@@ -161,15 +190,31 @@ class ExtractMetadataNamesProgressLogHandler(ProgressorLogHandler):
 def main():
     args = MetadataNamesArgumentParser().parse_args()
 
-    with Progressor() as progressor:
-        if not args.quiet:
-            handler = ExtractMetadataNamesProgressLogHandler(progressor=progressor, ignore_warnings=args.ignore_warnings)
-            LOG.addHandler(handler)
-            LOG.setLevel(level=DEBUG)
+    try:
+        with Progressor() as progressor:
+            if args.quiet:
+                LOG.disabled = True
+            else:
+                handler = ExtractMetadataNamesProgressLogHandler(
+                    progressor=progressor,
+                    ignore_warnings=args.ignore_warnings
+                )
+                LOG.addHandler(handler)
+                LOG.setLevel(level=DEBUG)
 
-        metadata_names = extract_metadata_names(sources=args.sources, recurse=args.recurse)
-
-    print('\n'.join(sorted(metadata_names)))
+            metadata_names = extract_metadata_names(
+                sources=args.sources,
+                recurse=args.recurse,
+                exit_on_unsupported_mimetype=args.exit_on_unsupported_mimetype
+            )
+    except KeyboardInterrupt:
+        pass
+    except UnsupportedMimetypeError as e:
+        LOG.error(e)
+    except:
+        LOG.exception('Unexpected error')
+    else:
+        print('\n'.join(sorted(metadata_names)))
 
 
 if __name__ == '__main__':
