@@ -11,7 +11,7 @@ from magic import Magic
 from terminal_utils.progressor import Progressor, ProgressStatus, ProgressorLogHandler
 from terminal_utils.colored_output import ColoredOutput, PrintColor
 
-from metadata_extractor.extractors.msxml import MSXMLMetadataExtractor
+from metadata_extractor.extractors.office_open_xml import OfficeOpenXMLMetadataExtractor
 from metadata_extractor.extractors.ole import OLEMetadataExtractor
 from metadata_extractor.extractors.pdf import PDFMetadataExtractor
 from metadata_extractor.extractors import MetadataExtractor
@@ -68,7 +68,7 @@ def extract_metadata_names(sources: List[Path], recurse: bool, exit_on_unsupport
         if not metadata:
             continue
 
-        if metadata_extractor is MSXMLMetadataExtractor:
+        if metadata_extractor is OfficeOpenXMLMetadataExtractor:
             core_metadata = metadata.get('core.xml')
 
             if creator := core_metadata.get('dc:creator'):
